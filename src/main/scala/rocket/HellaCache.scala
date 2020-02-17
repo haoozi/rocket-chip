@@ -23,6 +23,7 @@ case class DCacheParams(
     dataECC: Option[String] = None,
     dataECCBytes: Int = 1,
     nMSHRs: Int = 1,
+    tPrefetcher: PrefetcherType.Value = PrefetcherType.PREF_Dummy,
     nSDQ: Int = 17,
     nRPQ: Int = 16,
     nMMIOs: Int = 1,
@@ -209,6 +210,8 @@ class HellaCacheBundle(val outer: HellaCache)(implicit p: Parameters) extends Co
   val cpu = (new HellaCacheIO).flip
   val ptw = new TLBPTWIO()
   val errors = new DCacheErrors
+
+  val prefetcher = (new NBDCachePrefetcherBundle).flip
 }
 
 class HellaCacheModule(outer: HellaCache) extends LazyModuleImp(outer)

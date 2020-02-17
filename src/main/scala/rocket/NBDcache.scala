@@ -44,7 +44,7 @@ class WritebackReq(params: TLBundleParameters)(implicit p: Parameters) extends L
   val tag = Bits(width = tagBits)
   val idx = Bits(width = idxBits)
   val source = UInt(width = params.sourceBits)
-  val param = UInt(width = TLPermissions.cWidth) 
+  val param = UInt(width = TLPermissions.cWidth)
   val way_en = Bits(width = nWays)
   val voluntary = Bool()
 
@@ -75,7 +75,7 @@ class IOMSHR(id: Int)(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCa
   io.req.ready := (state === s_idle)
 
   val loadgen = new LoadGen(req.size, req.signed, req.addr, grant_word, false.B, wordBytes)
- 
+
   val a_source = UInt(id)
   val a_address = req.addr
   val a_size = req.size
@@ -219,7 +219,7 @@ class MSHR(id: Int)(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCach
   }
   when (io.req_sec_val && io.req_sec_rdy) { // s_wb_req, s_wb_resp, s_refill_req
     //If we get a secondary miss that needs more permissions before we've sent
-    //  out the primary miss's Acquire, we can upgrade the permissions we're 
+    //  out the primary miss's Acquire, we can upgrade the permissions we're
     //  going to ask for in s_refill_req
     req.cmd := dirtier_cmd
     when (is_hit_again) {
@@ -257,14 +257,14 @@ class MSHR(id: Int)(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCach
   io.idx_match := (state =/= s_invalid) && idx_match
   io.refill.way_en := req.way_en
   io.refill.addr := req_block_addr | refill_address_inc
-  io.tag := req_tag 
+  io.tag := req_tag
   io.req_pri_rdy := state === s_invalid
   io.req_sec_rdy := sec_rdy && rpq.io.enq.ready
 
   val meta_hazard = Reg(init=UInt(0,2))
   when (meta_hazard =/= UInt(0)) { meta_hazard := meta_hazard + 1 }
   when (io.meta_write.fire()) { meta_hazard := 1 }
-  io.probe_rdy := !idx_match || (!state.isOneOf(states_before_refill) && meta_hazard === 0) 
+  io.probe_rdy := !idx_match || (!state.isOneOf(states_before_refill) && meta_hazard === 0)
 
   io.meta_write.valid := state.isOneOf(s_meta_write_req, s_meta_clear)
   io.meta_write.bits.idx := req_idx
@@ -495,7 +495,7 @@ class WritebackUnit(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCach
 
   io.data_req.valid := fire
   io.data_req.bits.way_en := req.way_en
-  io.data_req.bits.addr := (if(refillCycles > 1) 
+  io.data_req.bits.addr := (if(refillCycles > 1)
                               Cat(req.idx, data_req_cnt(log2Up(refillCycles)-1,0))
                             else req.idx) << rowOffBits
 
@@ -513,7 +513,7 @@ class WritebackUnit(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCach
                           lgSize = lgCacheBlockBytes,
                           shrinkPermissions = req.param,
                           data = io.data_resp)._2
-                          
+
   io.release.bits := Mux(req.voluntary, voluntaryRelease, probeResponse)
 }
 
@@ -530,7 +530,7 @@ class ProbeUnit(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCacheMod
   }
 
   val (s_invalid :: s_meta_read :: s_meta_resp :: s_mshr_req ::
-       s_mshr_resp :: s_release :: s_writeback_req :: s_writeback_resp :: 
+       s_mshr_resp :: s_release :: s_writeback_req :: s_writeback_resp ::
        s_meta_write :: Nil) = Enum(UInt(), 9)
   val state = Reg(init=s_invalid)
 
@@ -733,7 +733,7 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   dtlb.io.sfence.bits.rs2 := s1_req.size(1)
   dtlb.io.sfence.bits.addr := s1_req.addr
   dtlb.io.sfence.bits.asid := io.cpu.s1_data.data
-  
+
   when (io.cpu.req.valid) {
     s1_req := io.cpu.req.bits
   }
@@ -769,20 +769,35 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   // tags
   def onReset = L1Metadata(UInt(0), ClientMetadata.onReset)
   val meta = Module(new L1MetadataArray(onReset _))
-  val metaReadArb = Module(new Arbiter(new L1MetaReadReq, 5))
+  // Add 1 more port
+  // port 5 for prefetch
+  val metaReadArb = Module(new Arbiter(new L1MetaReadReq, 6))
   val metaWriteArb = Module(new Arbiter(new L1MetaWriteReq, 2))
   meta.io.read <> metaReadArb.io.out
   meta.io.write <> metaWriteArb.io.out
 
   // data
   val data = Module(new DataArray)
-  val readArb = Module(new Arbiter(new L1DataReadReq, 4))
+  // Add 1 more port
+  // port 4 for prefetch
+  val readArb = Module(new Arbiter(new L1DataReadReq, 5))
   val writeArb = Module(new Arbiter(new L1DataWriteReq, 2))
   data.io.write.valid := writeArb.io.out.valid
   writeArb.io.out.ready := data.io.write.ready
   data.io.write.bits := writeArb.io.out.bits
   val wdata_encoded = (0 until rowWords).map(i => dECC.encode(writeArb.io.out.bits.data(coreDataBits*(i+1)-1,coreDataBits*i)))
   data.io.write.bits.data := wdata_encoded.asUInt
+
+
+  // tag read for prefetch
+  metaReadArb.io.in(5).valid := io.prefetcher.prefetch_req.valid
+  metaReadArb.io.in(5).bits.idx := io.prefetcher.prefetch_req.bits.addr >> blockOffBits
+
+  // data read for prefetch
+  readArb.io.in(4).valid := io.prefetcher.prefetch_req.valid
+  readArb.io.in(4).bits.addr := io.prefetcher.prefetch_req.bits.addr
+  readArb.io.in(4).bits.way_en := ~UInt(0, nWays)
+
 
   // tag read for new requests
   metaReadArb.io.in(4).valid := io.cpu.req.valid
@@ -1013,4 +1028,11 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
 
   // no clock-gating support
   io.cpu.clock_enabled := true
+
+
+  // prefetcher support
+  io.prefetcher.cpu_req_valid := io.cpu.req.valid
+  io.prefetcher.cpu_req_cmd :=io.cpu.req.bits.cmd
+  io.prefetcher.cpu_req_addr := io.cpu.req.bits.addr
+  io.prefetcher.cpu_req_size := io.cpu.req.bits.size
 }

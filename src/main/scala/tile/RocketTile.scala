@@ -86,6 +86,15 @@ class RocketTile private(
   val dtimProperty = dtim_adapter.map(d => Map(
     "sifive,dtim" -> d.device.asProperty)).getOrElse(Nil)
 
+
+  val dcachePrefetcher = LazyModule(
+    if (tileParams.dcache.get.tPrefetcher == PrefetcherType.PREF_NextLine) {
+      new NLPrefetcher()
+    } else {
+      new DummyPrefetcher()
+    }
+  )
+
   val itimProperty = frontend.icache.itimProperty.toSeq.flatMap(p => Map("sifive,itim" -> p))
 
   val cpuDevice: SimpleDevice = new SimpleDevice("cpu", Seq("sifive,rocket0", "riscv")) {
@@ -152,6 +161,11 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   outer.dcache.module.io.hartid := constants.hartid
   outer.frontend.module.io.hartid := constants.hartid
   outer.frontend.module.io.reset_vector := constants.reset_vector
+
+  if (tileParams.dcache.get.nMSHRs != 0) {
+    outer.dcache.module.io.prefetcher <> outer.dcachePrefetcher.module.io
+  }
+
 
   // Connect the core pipeline to other intra-tile modules
   outer.frontend.module.io.cpu <> core.io.imem

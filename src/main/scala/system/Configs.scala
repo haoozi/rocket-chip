@@ -24,6 +24,11 @@ class BaseConfig extends Config(
 
 class DefaultConfig extends Config(new WithNBigCores(1) ++ new BaseConfig)
 
+class NBDCacheConfigWithDummyPref extends Config(new WithNBigCores_NBDCache_DummyPref(1) ++ new BaseConfig)
+
+class NBDCacheConfigWithNLPref extends Config(new WithNBigCores_NBDCache_NLPref(1) ++ new BaseConfig)
+
+
 class DefaultBufferlessConfig extends Config(new WithBufferlessBroadcastHub ++ new DefaultConfig)
 class DefaultSmallConfig extends Config(new WithNSmallCores(1) ++ new BaseConfig)
 class DefaultRV32Config extends Config(new WithRV32 ++ new DefaultConfig)

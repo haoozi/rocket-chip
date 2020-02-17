@@ -83,3 +83,12 @@ trait MemoryOpConstants {
   def isWrite(cmd: UInt) = cmd === M_XWR || cmd === M_PWR || cmd === M_XSC || isAMO(cmd)
   def isWriteIntent(cmd: UInt) = isWrite(cmd) || cmd === M_PFW || cmd === M_XLR
 }
+
+trait NBDCachePrefetcherType {
+  object PrefetcherType extends Enumeration {
+    type PrefetcherType = Value
+    val PREF_Dummy, PREF_NextLine = Value
+  }
+
+  import PrefetcherType._
+}
