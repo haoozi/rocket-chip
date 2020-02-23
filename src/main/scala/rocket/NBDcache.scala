@@ -793,6 +793,8 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   metaReadArb.io.in(5).valid := io.prefetcher.prefetch_req.valid
   metaReadArb.io.in(5).bits.idx := io.prefetcher.prefetch_req.bits.addr >> blockOffBits
 
+  io.prefetcher.prefetch_req.ready := metaReadArb.io.in(5).ready
+
   // data read for prefetch
   readArb.io.in(4).valid := io.prefetcher.prefetch_req.valid
   readArb.io.in(4).bits.addr := io.prefetcher.prefetch_req.bits.addr
