@@ -17,7 +17,8 @@ class AXI4RAM(
     beatBytes: Int = 4,
     devName: Option[String] = None,
     errors: Seq[AddressSet] = Nil,
-    wcorrupt: Boolean = false)
+    wcorrupt: Boolean = false,
+    latency: Int = 0)
   (implicit p: Parameters) extends DiplomaticSRAM(address, beatBytes, devName)
 {
   val node = AXI4SlaveNode(Seq(AXI4SlavePortParameters(
@@ -62,8 +63,7 @@ class AXI4RAM(
     val r_sel1 = Reg(r_sel0)
     val w_sel1 = Reg(w_sel0)
 
-    when (in. b.fire()) { w_full := Bool(false) }
-    when (in.aw.fire()) { w_full := Bool(true) }
+
 
     when (in.aw.fire()) {
       w_id := in.aw.bits.id
@@ -77,20 +77,12 @@ class AXI4RAM(
       corrupt.foreach { _.write(w_addr, in.w.bits.corrupt.get.asUInt) }
     }
 
-    in. b.valid := w_full
-    in.aw.ready := in. w.valid && (in.b.ready || !w_full)
-    in. w.ready := in.aw.valid && (in.b.ready || !w_full)
 
-    in.b.bits.id   := w_id
-    in.b.bits.resp := Mux(w_sel1, AXI4Parameters.RESP_OKAY, AXI4Parameters.RESP_DECERR)
-    in.b.bits.user.foreach { _ := w_user }
 
     val r_full = RegInit(Bool(false))
     val r_id   = Reg(UInt())
     val r_user = Reg(UInt(width = 1 max in.params.userBits))
 
-    when (in. r.fire()) { r_full := Bool(false) }
-    when (in.ar.fire()) { r_full := Bool(true) }
 
     when (in.ar.fire()) {
       r_id := in.ar.bits.id
@@ -102,14 +94,63 @@ class AXI4RAM(
     val rdata = mem.readAndHold(r_addr, ren)
     val rcorrupt = corrupt.map(_.readAndHold(r_addr, ren)(0)).getOrElse(Bool(false))
 
-    in. r.valid := r_full
-    in.ar.ready := in.r.ready || !r_full
 
-    in.r.bits.id   := r_id
-    in.r.bits.resp := Mux(r_sel1, Mux(rcorrupt, AXI4Parameters.RESP_SLVERR, AXI4Parameters.RESP_OKAY), AXI4Parameters.RESP_DECERR)
-    in.r.bits.data := Cat(rdata.reverse)
-    in.r.bits.user.foreach { _ := r_user }
-    in.r.bits.last := Bool(true)
+
+
+    if (latency == 0) {
+
+      when (in. r.fire()) { r_full := Bool(false) }
+      when (in.ar.fire()) { r_full := Bool(true) }
+
+      when (in. b.fire()) { w_full := Bool(false) }
+      when (in.aw.fire()) { w_full := Bool(true) }
+
+
+      in. b.valid := w_full
+      in.aw.ready := in. w.valid && (in.b.ready || !w_full)
+      in. w.ready := in.aw.valid && (in.b.ready || !w_full)
+
+      in.b.bits.id   := w_id
+      in.b.bits.resp := Mux(w_sel1, AXI4Parameters.RESP_OKAY, AXI4Parameters.RESP_DECERR)
+      in.b.bits.user.foreach { _ := w_user }
+
+
+      in.r.valid := r_full
+      in.ar.ready := in.r.ready || !r_full
+      in.r.bits.id   := r_id
+      in.r.bits.resp := Mux(r_sel1, Mux(rcorrupt, AXI4Parameters.RESP_SLVERR, AXI4Parameters.RESP_OKAY), AXI4Parameters.RESP_DECERR)
+      in.r.bits.data := Cat(rdata.reverse)
+      in.r.bits.user.foreach { _ := r_user }
+      in.r.bits.last := Bool(true)
+    } else {
+
+      when (!in.ar.fire()) { r_full := Bool(false) }
+      when (in.ar.fire()) { r_full := Bool(true) }
+
+      when (!in.aw.fire()) { w_full := Bool(false) }
+      when (in.aw.fire()) { w_full := Bool(true) }
+
+      in.ar.ready := in.r.ready || !r_full
+
+      in.aw.ready := in. w.valid && (in.b.ready || !w_full)
+      in. w.ready := in.aw.valid && (in.b.ready || !w_full)
+
+
+      in.r.valid := ShiftRegister(r_full, latency, Bool(false), en = in.r.ready)
+      in.r.bits.id   := ShiftRegister(r_id, latency, en = in.r.ready)
+      in.r.bits.resp := ShiftRegister(Mux(r_sel1, Mux(rcorrupt, AXI4Parameters.RESP_SLVERR, AXI4Parameters.RESP_OKAY), AXI4Parameters.RESP_DECERR), latency, en = in.r.ready)
+      in.r.bits.data := ShiftRegister(Cat(rdata.reverse), latency, en = in.r.ready)
+      in.r.bits.user.foreach { _ := ShiftRegister(r_user, latency, en = in.r.ready) }
+      in.r.bits.last := Bool(true)
+
+
+      in.b.valid := ShiftRegister(w_full, latency, Bool(false), Bool(true))
+      in.b.bits.id   := ShiftRegister(w_id, latency)
+      in.b.bits.resp := ShiftRegister(Mux(w_sel1, AXI4Parameters.RESP_OKAY, AXI4Parameters.RESP_DECERR), latency)
+      in.b.bits.user.foreach { _ := ShiftRegister(w_user, latency) }
+
+    }
+
   }
 }
 
