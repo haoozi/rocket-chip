@@ -130,11 +130,10 @@ class AXI4RAM(
       when (!in.aw.fire()) { w_full := Bool(false) }
       when (in.aw.fire()) { w_full := Bool(true) }
 
-      in.ar.ready := in.r.ready || !r_full
+      in.ar.ready := ShiftRegister(in.r.ready, latency, Bool(false)) || !r_full
 
-      in.aw.ready := in. w.valid && (in.b.ready || !w_full)
-      in. w.ready := in.aw.valid && (in.b.ready || !w_full)
-
+      in.aw.ready := ShiftRegister(in. w.valid, latency, Bool(false)) && (ShiftRegister(in.b.ready, latency, Bool(false)) || !w_full)
+      in. w.ready := ShiftRegister(in.aw.valid, latency, Bool(false)) && (ShiftRegister(in.b.ready, latency, Bool(false)) || !w_full)
 
       in.r.valid := ShiftRegister(r_full, latency, Bool(false), en = in.r.ready)
       in.r.bits.id   := ShiftRegister(r_id, latency, en = in.r.ready)
