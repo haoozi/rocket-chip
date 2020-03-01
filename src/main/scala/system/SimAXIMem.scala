@@ -11,7 +11,7 @@ import freechips.rocketchip.subsystem.{CanHaveMasterAXI4MMIOPort, CanHaveMasterA
 /** Memory with AXI port for use in elaboratable test harnesses. */
 class SimAXIMem(edge: AXI4EdgeParameters, size: BigInt)(implicit p: Parameters) extends SimpleLazyModule {
   val node = AXI4MasterNode(List(edge.master))
-  val srams = AddressSet.misaligned(0, size).map{ aSet => LazyModule(new AXI4RAM(aSet, beatBytes = edge.bundle.dataBits/8, latency = 40))}
+  val srams = AddressSet.misaligned(0, size).map{ aSet => LazyModule(new AXI4RAM(aSet, beatBytes = edge.bundle.dataBits/8, latency = 100))}
   val xbar = AXI4Xbar()
   srams.foreach{ s => s.node := AXI4Buffer() := AXI4Fragmenter() := xbar }
   xbar := node

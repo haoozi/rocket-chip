@@ -87,7 +87,7 @@ trait MemoryOpConstants {
 trait NBDCachePrefetcherType {
   object PrefetcherType extends Enumeration {
     type PrefetcherType = Value
-    val PREF_Dummy, PREF_NextLine = Value
+    val PREF_Dummy, PREF_NextLine, PREF_Stride = Value
   }
 
   import PrefetcherType._

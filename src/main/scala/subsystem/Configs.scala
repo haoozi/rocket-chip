@@ -84,6 +84,26 @@ class WithNBigCores_NBDCache_NLPref(n: Int) extends Config((site, here, up) => {
   }
 })
 
+class WithNBigCores_NBDCache_StridePref(n: Int) extends Config((site, here, up) => {
+  case RocketTilesKey => {
+    val big = RocketTileParams(
+      core   = RocketCoreParams(mulDiv = Some(MulDivParams(
+        mulUnroll = 8,
+        mulEarlyOut = true,
+        divEarlyOut = true))),
+      dcache = Some(DCacheParams(
+        rowBits = site(SystemBusKey).beatBits,
+        nMSHRs = 4,
+        tPrefetcher = PrefetcherType.PREF_Stride,
+        blockBytes = site(CacheBlockBytes))),
+      icache = Some(ICacheParams(
+        rowBits = site(SystemBusKey).beatBits,
+        blockBytes = site(CacheBlockBytes))))
+    List.tabulate(n)(i => big.copy(hartId = i))
+  }
+})
+
+
 class WithNBigCores(n: Int) extends Config((site, here, up) => {
   case RocketTilesKey => {
     val big = RocketTileParams(
@@ -385,6 +405,7 @@ class WithDefaultMemPort extends Config((site, here, up) => {
                       beatBytes = site(MemoryBusKey).beatBytes,
                       idBits = 4), 1))
 })
+
 
 class WithNoMemPort extends Config((site, here, up) => {
   case ExtMem => None

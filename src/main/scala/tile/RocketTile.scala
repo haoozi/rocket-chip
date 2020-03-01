@@ -90,7 +90,9 @@ class RocketTile private(
   val dcachePrefetcher = LazyModule(
     if (tileParams.dcache.get.tPrefetcher == PrefetcherType.PREF_NextLine) {
       new NLPrefetcher()
-    } else {
+    } else if (tileParams.dcache.get.tPrefetcher == PrefetcherType.PREF_Stride) {
+      new StridePrefetcher()
+    } else{
       new DummyPrefetcher()
     }
   )

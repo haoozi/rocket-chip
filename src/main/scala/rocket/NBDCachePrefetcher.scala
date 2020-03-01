@@ -86,3 +86,64 @@ class NLPrefetcherImpl(outer: NLPrefetcher) extends NBDCachePrefetcherImpl(outer
   io.prefetch_req.bits.data        := UInt(0)
 
 }
+
+
+
+/**
+  * Stride prefetcher.
+  */
+
+
+class StridePrefetcher(implicit p: Parameters) extends NBDCachePrefetcher()(p) {
+  override lazy val module = new StridePrefetcherImpl(this)
+}
+
+class StridePrefetcherImpl(outer: StridePrefetcher) extends NBDCachePrefetcherImpl(outer) {
+  val degree = 2
+
+  val req_addr_history = Reg(UInt(width = coreMaxAddrBits))
+  val req_stride = Reg(UInt(width = coreMaxAddrBits))
+
+  val req_queue = Module(new Queue(UInt(width = coreMaxAddrBits), 4))
+
+
+  val counterEn = RegInit(Bool(false))
+  val counter = new Counter(degree * 2)
+  val counterWrap = RegInit(Bool(false))
+
+  when (counterEn) {
+    counterWrap := counter.inc()
+  }
+
+  when (counterEn && !counterWrap) {
+    when (req_stride < UInt(0x1000)) {
+      req_queue.io.enq.bits := io.cpu_req_addr + (counter.value + 1) * req_stride
+      req_queue.io.enq.valid := Bool(true)
+    } .otherwise {
+      req_queue.io.enq.valid := Bool(false)
+    }
+  } .otherwise {
+    req_queue.io.enq.valid := Bool(false)
+  }
+
+
+  when (counterWrap) {
+    counterEn := Bool(false)
+  }
+
+  when (io.cpu_req_valid) {
+    req_stride := io.cpu_req_addr - req_addr_history
+    req_addr_history := io.cpu_req_addr
+
+    counterEn := Bool(true)
+  }
+
+
+  io.prefetch_req.valid         := req_queue.io.deq.valid
+  req_queue.io.deq.ready        := io.prefetch_req.ready
+
+  io.prefetch_req.bits.addr     := req_queue.io.deq.bits
+  io.prefetch_req.bits.cmd      := M_PFW
+  io.prefetch_req.bits.data     := UInt(0)
+
+}
