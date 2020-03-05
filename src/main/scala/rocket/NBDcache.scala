@@ -694,9 +694,9 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   val mshrs = Module(new MSHRFile)
 
   io.cpu.req.ready := Bool(true)
-  val s1_valid = Reg(next=io.cpu.req.fire(), init=Bool(false))
   val s1_req = Reg(io.cpu.req.bits)
-  val s1_valid_masked = s1_valid && !io.cpu.s1_kill
+  val s1_valid = Reg(next=(io.cpu.req.fire() || io.prefetcher.prefetch_req.fire()), init=Bool(false))
+  val s1_valid_masked = s1_valid && (!io.cpu.s1_kill || io.prefetcher.prefetch_req.fire())
   val s1_replay = Reg(init=Bool(false))
   val s1_clk_en = Reg(Bool())
   val s1_sfence = s1_req.cmd === M_SFENCE
@@ -734,6 +734,9 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   dtlb.io.sfence.bits.addr := s1_req.addr
   dtlb.io.sfence.bits.asid := io.cpu.s1_data.data
 
+  when (io.prefetcher.prefetch_req.valid) {
+    s1_req := io.prefetcher.prefetch_req.bits
+  }
   when (io.cpu.req.valid) {
     s1_req := io.cpu.req.bits
   }
@@ -998,7 +1001,7 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   }
 
   val cache_resp = Wire(Valid(new HellaCacheResp))
-  cache_resp.valid := (s2_replay || s2_valid_masked && s2_hit) && !s2_data_correctable
+  cache_resp.valid := (s2_replay || s2_valid_masked && s2_hit) && !s2_data_correctable && !isPrefetch(s2_req.cmd)
   cache_resp.bits := s2_req
   cache_resp.bits.has_data := isRead(s2_req.cmd)
   cache_resp.bits.data := loadgen.data | s2_sc_fail
@@ -1007,10 +1010,10 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
 
   val uncache_resp = Wire(Valid(new HellaCacheResp))
   uncache_resp.bits := mshrs.io.resp.bits
-  uncache_resp.valid := mshrs.io.resp.valid
+  uncache_resp.valid := mshrs.io.resp.valid && !isPrefetch(mshrs.io.resp.bits.cmd)
   mshrs.io.resp.ready := Reg(next= !(s1_valid || s1_replay))
 
-  io.cpu.s2_nack := s2_valid && s2_nack
+  io.cpu.s2_nack := s2_valid && s2_nack && !(RegNext(RegNext(io.prefetcher.prefetch_req.fire())))
   io.cpu.resp := Mux(mshrs.io.resp.ready, uncache_resp, cache_resp)
   io.cpu.resp.bits.data_word_bypass := loadgen.wordData
   io.cpu.resp.bits.data_raw := s2_data_word
@@ -1025,6 +1028,8 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
 
   // performance events
   io.cpu.perf.acquire := edge.done(tl_out.a)
+  io.cpu.perf.miss := mshrs.io.resp.fire() && !isPrefetch(mshrs.io.resp.bits.cmd)
+  io.cpu.perf.prefetch := mshrs.io.resp.fire() && isPrefetch(mshrs.io.resp.bits.cmd)
   io.cpu.perf.release := edge.done(tl_out.c)
   io.cpu.perf.tlbMiss := io.ptw.req.fire()
 
