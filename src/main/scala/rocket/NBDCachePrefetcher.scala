@@ -54,7 +54,10 @@ class DummyPrefetcher(implicit p: Parameters) extends NBDCachePrefetcher()(p) {
 
 class DummyPrefetcherImpl(outer: DummyPrefetcher) extends NBDCachePrefetcherImpl(outer) {
 
-  io.prefetch_req.valid := false.B
+  io.prefetch_req.valid       := false.B
+  io.prefetch_req.bits.addr   := UInt(0)
+  io.prefetch_req.bits.cmd    := ShiftRegister(req_cmd, 5)
+  io.prefetch_req.bits.data   := UInt(0)
 }
 
 
