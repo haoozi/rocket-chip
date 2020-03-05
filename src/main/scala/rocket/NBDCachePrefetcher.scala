@@ -56,7 +56,7 @@ class DummyPrefetcherImpl(outer: DummyPrefetcher) extends NBDCachePrefetcherImpl
 
   io.prefetch_req.valid       := false.B
   io.prefetch_req.bits.addr   := UInt(0)
-  io.prefetch_req.bits.cmd    := ShiftRegister(req_cmd, 5)
+  io.prefetch_req.bits.cmd    := ShiftRegister(M_PFW, 5)
   io.prefetch_req.bits.data   := UInt(0)
 }
 
