@@ -118,9 +118,9 @@ class NLPrefetcherImpl(outer: NLPrefetcher) extends NBDCachePrefetcherImpl(outer
     req_valid := false.B
   }
 
-  io.prefetch_req.valid            := ShiftRegister(req_valid, 5, Bool(false), en = true)
-  io.prefetch_req.bits.addr        := ShiftRegister(req_addr, 5)
-  io.prefetch_req.bits.cmd         := ShiftRegister(req_cmd, 5)
+  io.prefetch_req.valid            := ShiftRegister(req_valid, 10, Bool(false), en = true)
+  io.prefetch_req.bits.addr        := ShiftRegister(req_addr, 10)
+  io.prefetch_req.bits.cmd         := ShiftRegister(req_cmd, 10)
   io.prefetch_req.bits.data        := UInt(0)
 
 }
@@ -200,9 +200,9 @@ class StridePrefetcherImpl(outer: StridePrefetcher) extends NBDCachePrefetcherIm
     req_valid := false.B
   }
 
-  io.prefetch_req.valid            := ShiftRegister(req_valid, 5, Bool(false), en = true)
-  io.prefetch_req.bits.addr        := ShiftRegister(req_addr, 5)
-  io.prefetch_req.bits.cmd         := ShiftRegister(req_cmd, 5)
+  io.prefetch_req.valid            := ShiftRegister(req_valid, 10, Bool(false), en = true)
+  io.prefetch_req.bits.addr        := ShiftRegister(req_addr, 10)
+  io.prefetch_req.bits.cmd         := ShiftRegister(req_cmd, 10)
   io.prefetch_req.bits.data        := UInt(0)
 
 
