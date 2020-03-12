@@ -166,6 +166,7 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
 
   if (tileParams.dcache.get.nMSHRs != 0) {
     outer.dcache.module.io.prefetcher <> outer.dcachePrefetcher.module.io
+    outer.dcachePrefetcher.module.io.cpu_mem_pc := core.io.mem_reg_pc
   }
 
 
