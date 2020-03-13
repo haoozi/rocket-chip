@@ -57,7 +57,7 @@ class DummyPrefetcherImpl(outer: DummyPrefetcher) extends NBDCachePrefetcherImpl
 
   io.prefetch_req.valid       := false.B
   io.prefetch_req.bits.addr   := UInt(0)
-  io.prefetch_req.bits.cmd    := ShiftRegister(M_PFW, 5)
+  io.prefetch_req.bits.cmd    := M_PFW
   io.prefetch_req.bits.data   := UInt(0)
 }
 
@@ -72,58 +72,36 @@ class NLPrefetcher(implicit p: Parameters) extends NBDCachePrefetcher()(p) {
 
 class NLPrefetcherImpl(outer: NLPrefetcher) extends NBDCachePrefetcherImpl(outer) {
 
-  // val degree = 2
-  //
-  // val req_queue = Module(new Queue(UInt(width = coreMaxAddrBits), 4))
-  //
-  // val counterEn = RegInit(Bool(false))
-  // val counter = new Counter(degree + 1)
-  // val counterWrap = RegInit(Bool(false))
-  //
-  // when (counterEn) {
-  //   counterWrap := counter.inc()
-  // }
-  //
-  // when (counterEn && !counterWrap) {
-  //   req_queue.io.enq.bits := io.cpu_req_addr + (counter.value + 1) * cacheBlockBytes.U
-  //   req_queue.io.enq.valid := Bool(true)
-  // } .otherwise {
-  //   req_queue.io.enq.valid := Bool(false)
-  // }
-  //
-  // when (counterWrap) {
-  //   counterEn := Bool(false)
-  // }
-  //
-  // when (io.cpu_req_valid) {
-  //   counterEn := Bool(true)
-  // }
-  //
-  // // io.prefetch_req.valid            := RegNext(req_queue.io.deq.valid) && !RegNext(io.cpu_req_valid)
-  // io.prefetch_req.valid            := ShiftRegister(req_queue.io.deq.valid, 10, Bool(false), en = Bool(true))
-  // req_queue.io.deq.ready           := io.prefetch_req.ready
-  //
-  // io.prefetch_req.bits.addr        := ShiftRegister(req_queue.io.deq.bits, 10)
-  // io.prefetch_req.bits.cmd         := M_PFW
-  // io.prefetch_req.bits.data        := UInt(0)
+    val nl_req_valid = RegInit(false.B)
+    val nl_req_addr = Reg(UInt(width = coreMaxAddrBits))
 
-  val req_valid = RegInit(false.B)
-  val req_addr  = Reg(UInt(width = coreMaxAddrBits))
-  val req_cmd   = Reg(UInt(M_SZ.W))
+    var addr_valid = Bool()
+    addr_valid = io.cpu_req_addr > 0x010
+    // addr_valid = io.cpu_req_addr > 0x010 && io.cpu_mem_pc > UInt(0x80000000L, width = 64)
 
-  when (io.cpu_req_valid) {
-    req_valid := true.B
-    req_addr  := io.cpu_req_addr + cacheBlockBytes.U
-    req_cmd   := M_PFW
-  } .otherwise {
-    req_valid := false.B
-  }
+    when (io.cpu_req_valid && addr_valid) {
+      nl_req_valid := true.B
+      nl_req_addr  := io.cpu_req_addr + cacheBlockBytes.U
+    } .otherwise {
+      nl_req_valid := false.B
+    }
 
-  io.prefetch_req.valid            := ShiftRegister(req_valid, 10, Bool(false), en = true)
-  io.prefetch_req.bits.addr        := ShiftRegister(req_addr, 10)
-  io.prefetch_req.bits.cmd         := ShiftRegister(req_cmd, 10)
-  io.prefetch_req.bits.data        := UInt(0)
+    // Handshake
+    val req_valid = RegInit(false.B)
+    val req_addr = RegEnable(nl_req_addr, nl_req_valid)
 
+    when (io.prefetch_req.fire() && !nl_req_valid) {
+      req_valid := false.B
+    } .otherwise {
+      when (nl_req_valid) {
+        req_valid := true.B
+      }
+    }
+
+    io.prefetch_req.valid            := req_valid
+    io.prefetch_req.bits.addr        := req_addr
+    io.prefetch_req.bits.cmd         := M_PFW
+    io.prefetch_req.bits.data        := UInt(0)
 }
 
 
@@ -143,68 +121,43 @@ class StridePrefetcherImpl(outer: StridePrefetcher) extends NBDCachePrefetcherIm
   val req_addr_history = Reg(UInt(width = coreMaxAddrBits))
   val req_stride = Reg(UInt(width = coreMaxAddrBits))
 
-  // val req_queue = Module(new Queue(UInt(width = coreMaxAddrBits), 4))
-  //
-  //
-  // val counterEn = RegInit(Bool(false))
-  // val counter = new Counter(degree + 1)
-  // val counterWrap = RegInit(Bool(false))
-  //
-  // when (counterEn) {
-  //   counterWrap := counter.inc()
-  // }
-  //
-  // when (counterEn && !counterWrap) {
-  //   when (req_stride < UInt(0x1000)) {
-  //     req_queue.io.enq.bits := io.cpu_req_addr + (counter.value + 1) * req_stride
-  //     req_queue.io.enq.valid := Bool(true)
-  //   } .otherwise {
-  //     req_queue.io.enq.valid := Bool(false)
-  //   }
-  // } .otherwise {
-  //   req_queue.io.enq.valid := Bool(false)
-  // }
-  //
-  //
-  // when (counterWrap) {
-  //   counterEn := Bool(false)
-  // }
-  //
+
   when (io.cpu_req_valid) {
     req_stride := io.cpu_req_addr - req_addr_history
     req_addr_history := io.cpu_req_addr
-  //
-  //   counterEn := Bool(true)
   }
-  //
-  //
-  // io.prefetch_req.valid         := req_queue.io.deq.valid
-  // req_queue.io.deq.ready        := io.prefetch_req.ready
-  //
-  // io.prefetch_req.bits.addr     := req_queue.io.deq.bits
-  // io.prefetch_req.bits.cmd      := M_PFW
-  // io.prefetch_req.bits.data     := UInt(0)
 
-  val req_valid = RegInit(false.B)
-  val req_addr  = Reg(UInt(width = coreMaxAddrBits))
-  val req_cmd   = Reg(UInt(M_SZ.W))
+
+  val stride_req_valid = RegInit(false.B)
+  val stride_req_addr = Reg(UInt(width = coreMaxAddrBits))
 
   when (io.cpu_req_valid) {
     when (req_stride < UInt(0x1000)) {
-      req_valid := true.B
-      req_addr  := io.cpu_req_addr + req_stride
-      req_cmd   := M_PFW
+      stride_req_valid := true.B
+      stride_req_addr  := io.cpu_req_addr + req_stride
     }.otherwise {
-      req_valid := false.B
+      stride_req_valid := false.B
     }
   } .otherwise {
-    req_valid := false.B
+    stride_req_valid := false.B
   }
 
-  io.prefetch_req.valid            := ShiftRegister(req_valid, 10, Bool(false), en = true)
-  io.prefetch_req.bits.addr        := ShiftRegister(req_addr, 10)
-  io.prefetch_req.bits.cmd         := ShiftRegister(req_cmd, 10)
-  io.prefetch_req.bits.data        := UInt(0)
+  // Handshake
+  val req_valid = RegInit(false.B)
+  val req_addr = RegEnable(stride_req_addr, stride_req_valid)
 
+  when (io.prefetch_req.fire() && !rpts.io.prefetch_req_valid) {
+    req_valid := false.B
+  } .otherwise {
+    when (rpts.io.prefetch_req_valid) {
+      req_valid := true.B
+    }
+  }
+
+
+  io.prefetch_req.valid            := req_valid
+  io.prefetch_req.bits.addr        := req_addr
+  io.prefetch_req.bits.cmd         := M_PFW
+  io.prefetch_req.bits.data        := UInt(0)
 
 }
