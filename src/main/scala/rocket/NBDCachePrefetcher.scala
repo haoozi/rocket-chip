@@ -146,10 +146,10 @@ class StridePrefetcherImpl(outer: StridePrefetcher) extends NBDCachePrefetcherIm
   val req_valid = RegInit(false.B)
   val req_addr = RegEnable(stride_req_addr, stride_req_valid)
 
-  when (io.prefetch_req.fire() && !rpts.io.prefetch_req_valid) {
+  when (io.prefetch_req.fire() && !stride_req_valid) {
     req_valid := false.B
   } .otherwise {
-    when (rpts.io.prefetch_req_valid) {
+    when (stride_req_valid) {
       req_valid := true.B
     }
   }
