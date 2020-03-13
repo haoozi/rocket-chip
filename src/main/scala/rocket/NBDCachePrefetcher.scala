@@ -72,36 +72,37 @@ class NLPrefetcher(implicit p: Parameters) extends NBDCachePrefetcher()(p) {
 
 class NLPrefetcherImpl(outer: NLPrefetcher) extends NBDCachePrefetcherImpl(outer) {
 
-    val nl_req_valid = RegInit(false.B)
-    val nl_req_addr = Reg(UInt(width = coreMaxAddrBits))
+  val nl_req_valid = RegInit(false.B)
+  val nl_req_addr = Reg(UInt(width = coreMaxAddrBits))
 
-    var addr_valid = Bool()
-    addr_valid = io.cpu_req_addr > 0x010
-    // addr_valid = io.cpu_req_addr > 0x010 && io.cpu_mem_pc > UInt(0x80000000L, width = 64)
+  var addr_valid = Bool()
+  addr_valid = io.cpu_req_addr > 0x010
+  // addr_valid = io.cpu_req_addr > 0x010 && io.cpu_mem_pc > UInt(0x80000000L, width = 64)
 
-    when (io.cpu_req_valid && addr_valid) {
-      nl_req_valid := true.B
-      nl_req_addr  := io.cpu_req_addr + cacheBlockBytes.U
-    } .otherwise {
-      nl_req_valid := false.B
+  when (io.cpu_req_valid && addr_valid) {
+    nl_req_valid := true.B
+    nl_req_addr  := io.cpu_req_addr + cacheBlockBytes.U
+  } .otherwise {
+    nl_req_valid := false.B
+  }
+
+  // Handshake
+  val req_valid = RegInit(false.B)
+  val req_addr = RegEnable(nl_req_addr, nl_req_valid)
+
+  when (io.prefetch_req.fire() && !nl_req_valid) {
+    req_valid := false.B
+  } .otherwise {
+    when (nl_req_valid) {
+      req_valid := true.B
     }
+  }
 
-    // Handshake
-    val req_valid = RegInit(false.B)
-    val req_addr = RegEnable(nl_req_addr, nl_req_valid)
+  io.prefetch_req.valid            := req_valid
+  io.prefetch_req.bits.addr        := req_addr
+  io.prefetch_req.bits.cmd         := M_PFW
+  io.prefetch_req.bits.data        := UInt(0)
 
-    when (io.prefetch_req.fire() && !nl_req_valid) {
-      req_valid := false.B
-    } .otherwise {
-      when (nl_req_valid) {
-        req_valid := true.B
-      }
-    }
-
-    io.prefetch_req.valid            := req_valid
-    io.prefetch_req.bits.addr        := req_addr
-    io.prefetch_req.bits.cmd         := M_PFW
-    io.prefetch_req.bits.data        := UInt(0)
 }
 
 
