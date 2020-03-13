@@ -154,6 +154,9 @@ class MSHR(id: Int)(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCach
     val replay = Decoupled(new ReplayInternal)
     val wb_req = Decoupled(new WritebackReq(edge.bundle))
     val probe_rdy = Bool(OUTPUT)
+
+    val perf_miss_demand = Bool(OUTPUT)
+    val perf_miss_prefetch = Bool(OUTPUT)
   }
 
   val s_invalid :: s_wb_req :: s_wb_resp :: s_meta_clear :: s_refill_req :: s_refill_resp :: s_meta_write_req :: s_meta_write_resp :: s_drain_rpq :: Nil = Enum(UInt(), 9)
@@ -300,6 +303,9 @@ class MSHR(id: Int)(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCach
     rpq.io.deq.ready := Bool(false)
     io.replay.bits.cmd := M_FLUSH_ALL /* nop */
   }
+
+  io.perf_miss_demand := io.mem_acquire.fire() && !isPrefetch(req.cmd)
+  io.perf_miss_prefetch := io.mem_acquire.fire() && isPrefetch(req.cmd)
 }
 
 class MSHRFile(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCacheModule()(p) {
@@ -321,6 +327,9 @@ class MSHRFile(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCacheModu
     val probe_rdy = Bool(OUTPUT)
     val fence_rdy = Bool(OUTPUT)
     val replay_next = Bool(OUTPUT)
+
+    val perf_miss_demand = Bool(OUTPUT)
+    val perf_miss_prefetch = Bool(OUTPUT)
   }
 
   // determine if the request is cacheable or not
@@ -348,6 +357,9 @@ class MSHRFile(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCacheModu
   var idx_match = Bool(false)
   var pri_rdy = Bool(false)
   var sec_rdy = Bool(false)
+
+  var perf_miss_demand = Bool(false)
+  var perf_miss_prefetch = Bool(false)
 
   io.fence_rdy := true
   io.probe_rdy := true
@@ -378,6 +390,9 @@ class MSHRFile(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCacheModu
     pri_rdy = pri_rdy || mshr.io.req_pri_rdy
     sec_rdy = sec_rdy || mshr.io.req_sec_rdy
     idx_match = idx_match || mshr.io.idx_match
+
+    perf_miss_demand = perf_miss_demand || mshr.io.perf_miss_demand
+    perf_miss_prefetch = perf_miss_prefetch || mshr.io.perf_miss_prefetch
 
     when (!mshr.io.req_pri_rdy) { io.fence_rdy := false }
     when (!mshr.io.probe_rdy) { io.probe_rdy := false }
@@ -439,6 +454,9 @@ class MSHRFile(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCacheModu
     sdq_val := sdq_val & ~(UIntToOH(replay_arb.io.out.bits.sdq_id) & Fill(cfg.nSDQ, free_sdq)) |
                PriorityEncoderOH(~sdq_val(cfg.nSDQ-1,0)) & Fill(cfg.nSDQ, sdq_enq)
   }
+
+  io.perf_miss_demand := perf_miss_demand
+  io.perf_miss_prefetch := perf_miss_prefetch
 }
 
 class WritebackUnit(implicit edge: TLEdgeOut, p: Parameters) extends L1HellaCacheModule()(p) {
@@ -734,7 +752,10 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   dtlb.io.sfence.bits.addr := s1_req.addr
   dtlb.io.sfence.bits.asid := io.cpu.s1_data.data
 
-  when (io.prefetcher.prefetch_req.valid) {
+
+  val prefetch_cacheable = edge.manager.supportsAcquireBFast(io.prefetcher.prefetch_req.bits.addr, lgCacheBlockBytes)
+
+  when (io.prefetcher.prefetch_req.valid && prefetch_cacheable) {
     s1_req := io.prefetcher.prefetch_req.bits
   }
   when (io.cpu.req.valid) {
@@ -793,13 +814,13 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
 
 
   // tag read for prefetch
-  metaReadArb.io.in(5).valid := io.prefetcher.prefetch_req.valid
+  metaReadArb.io.in(5).valid := io.prefetcher.prefetch_req.valid && prefetch_cacheable
   metaReadArb.io.in(5).bits.idx := io.prefetcher.prefetch_req.bits.addr >> blockOffBits
 
   io.prefetcher.prefetch_req.ready := metaReadArb.io.in(5).ready
 
   // data read for prefetch
-  readArb.io.in(4).valid := io.prefetcher.prefetch_req.valid
+  readArb.io.in(4).valid := io.prefetcher.prefetch_req.valid && prefetch_cacheable
   readArb.io.in(4).bits.addr := io.prefetcher.prefetch_req.bits.addr
   readArb.io.in(4).bits.way_en := ~UInt(0, nWays)
 
@@ -1028,8 +1049,8 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
 
   // performance events
   io.cpu.perf.acquire := edge.done(tl_out.a)
-  io.cpu.perf.miss := mshrs.io.resp.fire() && !isPrefetch(mshrs.io.resp.bits.cmd)
-  io.cpu.perf.prefetch := mshrs.io.resp.fire() && isPrefetch(mshrs.io.resp.bits.cmd)
+  io.cpu.perf.miss := mshrs.io.perf_miss_demand
+  io.cpu.perf.prefetch := mshrs.io.perf_miss_prefetch
   io.cpu.perf.release := edge.done(tl_out.c)
   io.cpu.perf.tlbMiss := io.ptw.req.fire()
 

@@ -18,9 +18,8 @@ class NBDCachePrefetcherBundle()(implicit p: Parameters) extends CoreBundle with
   val cpu_req_cmd      = Input(Bits(M_SZ.W))
   val cpu_req_size     = Input(Bits(width = log2Ceil(coreDataBytes.log2 + 1)))
 
-  val cpu_mem_pc       = Input(UInt(width = 64))
 
-  // val cache_hit        = Input(Bool())
+  val cpu_mem_pc       = Input(UInt(width = 64))
 
   val prefetch_req     = Decoupled(new HellaCacheReq)
 }
