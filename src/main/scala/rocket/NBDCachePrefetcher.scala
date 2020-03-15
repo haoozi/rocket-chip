@@ -76,10 +76,12 @@ class NLPrefetcherImpl(outer: NLPrefetcher) extends NBDCachePrefetcherImpl(outer
   val nl_req_addr = Reg(UInt(width = coreMaxAddrBits))
 
   var addr_valid = Bool()
+  var addr_is_tohost = Bool()
 
-  addr_valid = io.cpu_mem_pc > UInt(0x80000000L, width = 64) && io.cpu_req_addr > UInt(0x80000000L, width = 64)
+  addr_is_tohost = io.cpu_req_addr >= UInt(0x80001000L) && io.cpu_req_addr <= UInt(0x80001048L)
+  addr_valid = io.cpu_mem_pc > UInt(0x80000000L) && io.cpu_req_addr > UInt(0x80000000L)
 
-  when (io.cpu_req_valid && addr_valid) {
+  when (io.cpu_req_valid && addr_valid && !addr_is_tohost) {
     nl_req_valid := true.B
     nl_req_addr  := (io.cpu_req_addr + cacheBlockBytes.U) & UInt(0xFFFFFFFFFFFFFC0L)
   } .otherwise {
@@ -207,7 +209,7 @@ class RPTEntry(id: Int)(p: Parameters) extends L1HellaCacheModule()(p) {
     }
   }
 
-  when (RegNext(pc_match && state === s_steady)) {
+  when (RegNext(pc_match && state === s_steady) && rpte_predict > UInt(0x80000000L)) {
     io.prefetch_valid := true.B
     io.prefetch_addr := rpte_predict
   } .otherwise {
@@ -261,6 +263,7 @@ class RPTFile(tableSize: Int)(p: Parameters) extends L1HellaCacheModule()(p) {
 
   alloc_arb.io.out.ready := io.cpu_req_valid && !pc_match
 
+
   io.prefetch_req_valid := pref_arb.io.out.valid
   io.prefetch_req_addr := pref_arb.io.out.bits
 }
@@ -270,16 +273,16 @@ class StridePrefetcher(implicit p: Parameters) extends NBDCachePrefetcher()(p) {
 }
 
 class StridePrefetcherImpl(outer: StridePrefetcher) extends NBDCachePrefetcherImpl(outer) {
+  val rpts = Module(new RPTFile(8)(outer.p))
 
   val req_valid = RegInit(false.B)
   var addr_valid = Bool()
+  var addr_is_tohost = Bool()
 
-  val rpts = Module(new RPTFile(8)(outer.p))
+  addr_is_tohost = io.cpu_req_addr >= UInt(0x80001000L) && io.cpu_req_addr <= UInt(0x80001048L)
+  addr_valid = io.cpu_mem_pc > UInt(0x80000000L) && io.cpu_req_addr > UInt(0x80000000L)
 
-
-  addr_valid = io.cpu_mem_pc > UInt(0x80000000L, width = 64) && io.cpu_req_addr > UInt(0x80000000L, width = 64)
-
-  rpts.io.cpu_req_valid := RegNext(io.cpu_req_valid && addr_valid)
+  rpts.io.cpu_req_valid := RegNext(io.cpu_req_valid && addr_valid && !addr_is_tohost)
   rpts.io.cpu_req_addr := RegNext(io.cpu_req_addr)
 
   rpts.io.cpu_mem_pc := io.cpu_mem_pc
