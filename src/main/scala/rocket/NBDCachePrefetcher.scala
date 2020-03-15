@@ -152,13 +152,16 @@ class RPTEntry(id: Int)(p: Parameters) extends L1HellaCacheModule()(p) {
 
   val cpu_req_pc_match = Wire(Bool())
 
+  val pc_match = Wire(Bool())
+
 
   io.alloc_ready := state === s_idle
   io.state_idle := state === s_idle
   io.state_trans := state === s_trans
   io.state_steady := state === s_steady
 
-  cpu_req_pc_match := io.cpu_req_valid && io.cpu_mem_pc === rpte_pc
+  pc_match := io.cpu_mem_pc === rpte_pc
+  cpu_req_pc_match := io.cpu_req_valid && pc_match
   io.cpu_req_pc_match := cpu_req_pc_match && state =/= s_idle
 
 
@@ -188,8 +191,10 @@ class RPTEntry(id: Int)(p: Parameters) extends L1HellaCacheModule()(p) {
   }
 
   when (state === s_steady) {
+    when (pc_match) {
+      rpte_predict := io.cpu_req_addr + rpte_stride + cacheBlockBytes.U
+    }
     when (cpu_req_pc_match) {
-      rpte_predict := io.cpu_req_addr + rpte_stride
 
       est_stride := io.cpu_req_addr - rpte_addr
       rpte_addr := io.cpu_req_addr
@@ -202,7 +207,7 @@ class RPTEntry(id: Int)(p: Parameters) extends L1HellaCacheModule()(p) {
     }
   }
 
-  when (RegNext(cpu_req_pc_match && state === s_steady)) {
+  when (RegNext(pc_match && state === s_steady)) {
     io.prefetch_valid := true.B
     io.prefetch_addr := rpte_predict
   } .otherwise {
