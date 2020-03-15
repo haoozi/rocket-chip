@@ -76,13 +76,12 @@ class NLPrefetcherImpl(outer: NLPrefetcher) extends NBDCachePrefetcherImpl(outer
   val nl_req_addr = Reg(UInt(width = coreMaxAddrBits))
 
   var addr_valid = Bool()
-  // addr_valid = io.cpu_req_addr > 0x010
-  // addr_valid = io.cpu_req_addr > UInt(0x80000000L, width = 64)
+
   addr_valid = io.cpu_mem_pc > UInt(0x80000000L, width = 64) && io.cpu_req_addr > UInt(0x80000000L, width = 64)
 
   when (io.cpu_req_valid && addr_valid) {
     nl_req_valid := true.B
-    nl_req_addr  := io.cpu_req_addr + cacheBlockBytes.U
+    nl_req_addr  := (io.cpu_req_addr + cacheBlockBytes.U) & UInt(0xFFFFFFFFFFFFFC0L)
   } .otherwise {
     nl_req_valid := false.B
   }
@@ -91,12 +90,10 @@ class NLPrefetcherImpl(outer: NLPrefetcher) extends NBDCachePrefetcherImpl(outer
   val req_valid = RegInit(false.B)
   val req_addr = RegEnable(nl_req_addr, nl_req_valid)
 
-  when (io.prefetch_req.fire() && !nl_req_valid) {
+  when (nl_req_valid) {
+    req_valid := true.B
+  } .elsewhen(io.prefetch_req.fire()) {
     req_valid := false.B
-  } .otherwise {
-    when (nl_req_valid) {
-      req_valid := true.B
-    }
   }
 
   io.prefetch_req.valid            := req_valid
@@ -169,7 +166,6 @@ class RPTEntry(id: Int)(p: Parameters) extends L1HellaCacheModule()(p) {
     rpte_counter.value := 0
   }
 
-
   when (state === s_idle) {
     when (io.alloc_do && io.cpu_req_valid) {
       state := s_trans
@@ -206,7 +202,6 @@ class RPTEntry(id: Int)(p: Parameters) extends L1HellaCacheModule()(p) {
     }
   }
 
-
   when (RegNext(cpu_req_pc_match && state === s_steady)) {
     io.prefetch_valid := true.B
     io.prefetch_addr := rpte_predict
@@ -214,11 +209,9 @@ class RPTEntry(id: Int)(p: Parameters) extends L1HellaCacheModule()(p) {
     io.prefetch_valid := false.B
   }
 
-
   when (rpte_counter_wrap) {
     state := s_idle
   }
-
 
 }
 
@@ -240,8 +233,8 @@ class RPTFile(tableSize: Int)(p: Parameters) extends L1HellaCacheModule()(p) {
 
   var pc_match = Bool(false)
 
-  val pref_arb = Module(new Arbiter(UInt(width = coreMaxAddrBits), tableSize))
   val alloc_arb = Module(new Arbiter(Bool(), tableSize))
+  val pref_arb = Module(new Arbiter(UInt(width = coreMaxAddrBits), tableSize))
 
   val RPTEs = (0 until tableSize) map { i =>
     val rpte = Module(new RPTEntry(i)(p))
@@ -261,13 +254,7 @@ class RPTFile(tableSize: Int)(p: Parameters) extends L1HellaCacheModule()(p) {
     rpte
   }
 
-  // io.req.valid && sdq_rdy && cacheable && !idx_match
-  var addr_valid = Bool()
-  // addr_valid = io.cpu_req_addr > 0x010
-  addr_valid = io.cpu_mem_pc > UInt(0x80000000L, width = 64) && io.cpu_req_addr > UInt(0x80000000L, width = 64)
-  // addr_valid = io.cpu_req_addr > UInt(0x80000000L, width = 64)
-
-  alloc_arb.io.out.ready := io.cpu_req_valid && !pc_match && addr_valid
+  alloc_arb.io.out.ready := io.cpu_req_valid && !pc_match
 
   io.prefetch_req_valid := pref_arb.io.out.valid
   io.prefetch_req_addr := pref_arb.io.out.bits
@@ -280,32 +267,32 @@ class StridePrefetcher(implicit p: Parameters) extends NBDCachePrefetcher()(p) {
 class StridePrefetcherImpl(outer: StridePrefetcher) extends NBDCachePrefetcherImpl(outer) {
 
   val req_valid = RegInit(false.B)
+  var addr_valid = Bool()
 
   val rpts = Module(new RPTFile(8)(outer.p))
 
-  rpts.io.cpu_req_valid := RegNext(io.cpu_req_valid)
+
+  addr_valid = io.cpu_mem_pc > UInt(0x80000000L, width = 64) && io.cpu_req_addr > UInt(0x80000000L, width = 64)
+
+  rpts.io.cpu_req_valid := RegNext(io.cpu_req_valid && addr_valid)
   rpts.io.cpu_req_addr := RegNext(io.cpu_req_addr)
 
   rpts.io.cpu_mem_pc := io.cpu_mem_pc
 
 
 
+  // Handshake
   val req_addr = RegEnable(rpts.io.prefetch_req_addr, rpts.io.prefetch_req_valid)
 
-
-  when (io.prefetch_req.fire() && !rpts.io.prefetch_req_valid) {
+  when (rpts.io.prefetch_req_valid) {
+    req_valid := true.B
+  } .elsewhen(io.prefetch_req.fire()) {
     req_valid := false.B
-  } .otherwise {
-    when (rpts.io.prefetch_req_valid) {
-      req_valid := true.B
-    }
   }
-
 
   io.prefetch_req.valid            := req_valid
   io.prefetch_req.bits.addr        := req_addr
   io.prefetch_req.bits.cmd         := M_PFW
   io.prefetch_req.bits.data        := UInt(0)
-
 
 }
