@@ -901,6 +901,8 @@ class DCacheModule(outer: DCache) extends HellaCacheModule(outer) {
     lrscCount > 0 || blockProbeAfterGrantCount > 0
 
   // performance events
+  val perf_cacheable = edge.manager.supportsAcquireBFast(tl_out_a.bits.address, lgCacheBlockBytes)
+  io.cpu.perf.miss := tl_out_a.fire() && perf_cacheable
   io.cpu.perf.acquire := edge.done(tl_out_a)
   io.cpu.perf.release := edge.done(tl_out_c)
   io.cpu.perf.grant := d_done
